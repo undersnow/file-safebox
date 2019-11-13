@@ -13,6 +13,15 @@ path：/home/test/file_safe
 
 
 
+管理程序用法：
+
+```shell
+./safe_manager in  filename     :cp file to /home/test/file_safe/
+./safe_manager out filename     :cp file in /home/test/file_safe/ to current folder
+./safe_manager ls               :check the file list in /home/test/file_safe/
+```
+
+
 不足：
 
 其他程序可以使用ls命令等查看文件名
