@@ -1,4 +1,4 @@
-obj-m := test.o
+obj-m := hook.o
 PWD := $(shell pwd)
 KVER := $(shell uname -r)
 KDIR := /lib/modules/$(KVER)/build
