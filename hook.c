@@ -47,7 +47,7 @@ asmlinkage long hooked_read(struct pt_regs *regs) {
 	char* path = NULL;
 	struct file* file = fdt->fd[regs->di];
 	
-    //task_lock(current);
+    task_lock(current);
 	if(file != NULL && file->f_path.dentry != NULL) {	
 		path=dentry_path_raw(file->f_path.dentry,buff,PATH_MAX);
 		if(strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,"safeBox")) {
@@ -59,7 +59,7 @@ asmlinkage long hooked_read(struct pt_regs *regs) {
 			}
 		}
 	}
-	//task_unlock(current);
+	task_unlock(current);
     kfree(buff);
     return old_read(regs);
 }
@@ -71,7 +71,7 @@ asmlinkage long hooked_write(struct pt_regs *regs) {
 	char* path = NULL;
 	struct file* file = fdt->fd[regs->di];
 
-    //task_lock(current);
+    task_lock(current);
 	if(file != NULL && file->f_path.dentry != NULL) {	
 		path = dentry_path_raw(file->f_path.dentry,buff,PATH_MAX);
 		if(strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,"safeBox")) {
@@ -83,7 +83,7 @@ asmlinkage long hooked_write(struct pt_regs *regs) {
 			}
 		}
 	}
-    //task_unlock(current);
+    task_unlock(current);
     kfree(buff);
     return old_write(regs);
 }
@@ -94,14 +94,14 @@ asmlinkage long hooked_openat(struct pt_regs *regs) {
 	char *path = NULL;
 	strncpy_from_user(name,(char*)regs->si,PATH_MAX);
 
-	//task_lock(current);
+	task_lock(current);
 
 	//absolute path
 	if (strncmp(name,"/",1) == 0) {
 		path = name;
 	}
 	//relative path
-	else if ((int)regs->di == AT_FDCWD) {
+	else {
 		struct dentry *parent_dentry = current->fs->pwd.dentry;
 		path = dentry_path_raw(parent_dentry,buff,PATH_MAX);
 		if (strcmp(path,"/") != 0) {
@@ -109,7 +109,8 @@ asmlinkage long hooked_openat(struct pt_regs *regs) {
 		}
 		strcat(path,name);
 	}
-	//task_unlock(current);
+
+	task_unlock(current);
 	
 	if (strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,"safeBox")) {
 		if (strncmp(current->comm,COMMANDNAME,strlen(COMMANDNAME)) != 0) {
@@ -118,12 +119,6 @@ asmlinkage long hooked_openat(struct pt_regs *regs) {
 			return -1;
 		}
 	}
-
-	/*
-	if (strstr(name,"txt")) {
-		printk("name: %s path: %s dfd: %d flag: %d",name,path,(int)regs->di, AT_FDCWD);
-	}
-	*/
 
 	kfree(buff);
 	return old_openat(regs);
