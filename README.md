@@ -3,29 +3,29 @@ file safe based on overloading system call
 
 make
 
-insmod test.ko
+insmod hook.ko
 
-path：/home/test/file_safe
+path：/root/safeBox
 
-已成功hook read,write系统调用，并成功实现保险箱管理程序的识别
+已成功hook read,write,openat系统调用，并成功实现保险箱管理程序的识别
 
 其他程序无法读取保险箱文件夹内文件内容，并且无法从文件外向保险箱传输文件
+保险箱内无法创建新文件
+无法通过ls命令查看保险箱内的文件列表
 
 
 
 管理程序用法：
 
 ```shell
-./safe_manager in  filename     :cp file to /home/test/file_safe/
-./safe_manager out filename     :cp file in /home/test/file_safe/ to current folder
-./safe_manager ls               :check the file list in /home/test/file_safe/
+./safe_manager in  filename     :cp file to /root/safeBox/
+./safe_manager out filename     :cp file in /root/safeBox/ to current folder
+./safe_manager ls               :check the file list in /root/safeBox/
 ```
 
 
 不足：
 
-其他程序可以使用ls命令等查看文件名
+其他程序可以删除保险箱内的文件
 
-其他程序可以删除
-
-其他程序向保险箱复制文件时，会留下一个大小为0的文件，可在保险箱管理程序中使用查看命令时删除
+可以通过ls+文件名直接查看文件属性
