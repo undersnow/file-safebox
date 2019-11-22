@@ -22,9 +22,10 @@
 #include <linux/limits.h> 
 
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("hook sys_read");
+MODULE_DESCRIPTION("hook syscalls");
 
 #define SAFEPATH "/root/safeBox"
+#define SAFENAME "safeBox"
 #define COMMANDNAME "safe_manager"
 #define MAX_LENGTH 256
 
@@ -40,87 +41,119 @@ orig_openat_t old_openat = NULL;
 unsigned int level;
 pte_t *pte;
 
+
+void get_path_from_dentry(char *path, struct dentry *dentry) {
+	char *buf = (char*)kmalloc(MAX_LENGTH,GFP_KERNEL);
+	if (strcmp(dentry->d_name.name,"/") == 0) {
+		strcpy(path,dentry->d_name.name);
+		return;
+	}
+
+	strcpy(path,dentry->d_name.name);
+	while ((dentry = dentry->d_parent) != NULL) {
+		strcpy(buf,dentry->d_name.name);
+		if (strcmp(buf,"/") != 0) {
+			strcat(buf,"/");
+		}
+		strcat(buf,path);
+		strcpy(path,buf);
+		if (strcmp(dentry->d_name.name,"/") == 0) {
+			break;
+		}
+	}
+}
+
 asmlinkage long hooked_read(struct pt_regs *regs) {
     struct files_struct *files = current->files;
-	char *buff = (char*)kmalloc(PATH_MAX,GFP_KERNEL);
 	struct fdtable* fdt = files->fdt;
-	char* path = NULL;
+	char *path = NULL;
+	char *buff = (char*)kmalloc(PATH_MAX,GFP_KERNEL);
 	struct file* file = fdt->fd[regs->di];
 	
     task_lock(current);
-	if(file != NULL && file->f_path.dentry != NULL) {	
-		path=dentry_path_raw(file->f_path.dentry,buff,PATH_MAX);
-		if(strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,"safeBox")) {
+	if(file != NULL && file->f_path.dentry != NULL) {
+		//get_path_from_dentry(path,file->f_path.dentry);
+		path = dentry_path_raw(file->f_path.dentry,buff,PATH_MAX);
+		if(strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,SAFENAME)) {
 			if (strncmp(current->comm,COMMANDNAME,strlen(COMMANDNAME)) != 0) {
 				printk("Find read operation to safeBox: %s The path is %s The command name is %s", SAFEPATH, path, current->comm);
-				task_unlock(current);
 				kfree(buff);
+				task_unlock(current);
 				return -1;
 			}
 		}
 	}
+
+	kfree(buff);
 	task_unlock(current);
-    kfree(buff);
     return old_read(regs);
 }
 
 asmlinkage long hooked_write(struct pt_regs *regs) {
     struct files_struct *files = current->files;
-	char *buff = (char*)kmalloc(PATH_MAX,GFP_KERNEL);
 	struct fdtable* fdt = files->fdt;
-	char* path = NULL;
+	char *path = NULL;
+	char *buff = (char*)kmalloc(PATH_MAX,GFP_KERNEL);
 	struct file* file = fdt->fd[regs->di];
 
     task_lock(current);
 	if(file != NULL && file->f_path.dentry != NULL) {	
+		//get_path_from_dentry(path,file->f_path.dentry);
 		path = dentry_path_raw(file->f_path.dentry,buff,PATH_MAX);
-		if(strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,"safeBox")) {
+		if(strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,SAFENAME)) {
 			if (strncmp(current->comm,COMMANDNAME,strlen(COMMANDNAME)) != 0) {
 				printk("Find write operation to safeBox: %s The path is %s The command name is %s", SAFEPATH, path, current->comm);
-				task_unlock(current);
 				kfree(buff);
+				task_unlock(current);
 				return -1;
 			}
 		}
 	}
+
+	kfree(buff);
     task_unlock(current);
-    kfree(buff);
     return old_write(regs);
 }
 
 asmlinkage long hooked_openat(struct pt_regs *regs) {
-	char *buff = (char*)kmalloc(PATH_MAX,GFP_KERNEL);
-	char name[PATH_MAX];
-	char *path = NULL;
-	strncpy_from_user(name,(char*)regs->si,PATH_MAX);
+	char *name = (char*)kmalloc(MAX_LENGTH,GFP_KERNEL);
+	char *path = (char*)kmalloc(MAX_LENGTH,GFP_KERNEL);
+	strncpy_from_user(name,(char*)regs->si,MAX_LENGTH);
 
 	task_lock(current);
 
 	//absolute path
 	if (strncmp(name,"/",1) == 0) {
-		path = name;
+		strcpy(path,name);
 	}
 	//relative path
-	else {
+	else if ((int)regs->di == AT_FDCWD) {
 		struct dentry *parent_dentry = current->fs->pwd.dentry;
-		path = dentry_path_raw(parent_dentry,buff,PATH_MAX);
+		get_path_from_dentry(path,parent_dentry);
+		//strcpy(path,parent_dentry->d_name.name);
 		if (strcmp(path,"/") != 0) {
 			strcat(path,"/");
 		}
 		strcat(path,name);
 	}
-
-	task_unlock(current);
+	else {
+		goto end;
+	}
 	
-	if (strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,"safeBox")) {
+	if (strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,SAFENAME)) {
 		if (strncmp(current->comm,COMMANDNAME,strlen(COMMANDNAME)) != 0) {
 			printk("Find openat operation to safeBox: %s The path is %s", SAFEPATH, path);
-			kfree(buff);
+			kfree(name);
+			kfree(path);
+			task_unlock(current);
 			return -1;
 		}
 	}
 
-	kfree(buff);
+end:
+	kfree(name);
+	kfree(path);
+	task_unlock(current);
 	return old_openat(regs);
 }
 
@@ -157,9 +190,8 @@ static int hooked_init(void) {
     old_write = ((orig_write_t *)(sys_call_table_addr))[__NR_write]; 
     old_openat = ((orig_openat_t *)(sys_call_table_addr))[__NR_openat]; 
 	
-    pte = lookup_address((unsigned long) sys_call_table_addr, &level);
+    pte = lookup_address((unsigned long)sys_call_table_addr, &level);
  
-
     set_pte_atomic(pte, pte_mkwrite(*pte));
  
     printk("+ unprotected kernel memory page containing sys_call_table\n");
@@ -179,16 +211,16 @@ static int hooked_init(void) {
 
  
 static void hooked_exit(void) {
-    if(old_read != NULL) {
-    	set_pte_atomic(pte, pte_mkwrite(*pte));
+	pte = lookup_address((unsigned long)sys_call_table_addr, &level);
+	
+    set_pte_atomic(pte, pte_mkwrite(*pte));
     	
-        // restore sys_call_table to original state
-        ((unsigned long * ) (sys_call_table_addr))[__NR_read] = (unsigned long) old_read;
-        ((unsigned long * ) (sys_call_table_addr))[__NR_write] = (unsigned long) old_write;
-        ((unsigned long * ) (sys_call_table_addr))[__NR_openat] = (unsigned long) old_openat;
+    // restore sys_call_table to original state
+    ((unsigned long * ) (sys_call_table_addr))[__NR_read] = (unsigned long) old_read;
+    ((unsigned long * ) (sys_call_table_addr))[__NR_write] = (unsigned long) old_write;
+    ((unsigned long * ) (sys_call_table_addr))[__NR_openat] = (unsigned long) old_openat;
 
-        set_pte_atomic(pte, pte_clear_flags(*pte, _PAGE_RW));
-    }
+    set_pte_atomic(pte, pte_clear_flags(*pte, _PAGE_RW));
     
     printk("+ Unloading hook_read module\n");
 }
