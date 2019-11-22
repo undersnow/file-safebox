@@ -164,7 +164,12 @@ asmlinkage long hooked_rename(struct pt_regs *regs) {
 	strncpy_from_user(dst,(char*)regs->si,MAX_LENGTH);
         strncpy_from_user(src,(char*)regs->di,MAX_LENGTH);
         if(strstr(dst,SAFENAME)||strstr(src,SAFENAME))
-              {return -1;}	
+              {
+				  kfree(dst);
+				  kfree(src);
+				  return -1;}	
+    kfree(dst);
+	kfree(src);
 	return old_rename(regs);
 }
 
