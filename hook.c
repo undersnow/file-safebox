@@ -33,12 +33,13 @@ typedef asmlinkage long (*orig_read_t)(struct pt_regs *regs);
 typedef asmlinkage long (*orig_write_t)(struct pt_regs *regs);
 typedef asmlinkage long (*orig_openat_t)(struct pt_regs *regs);
 typedef asmlinkage long (*orig_rename_t)(struct pt_regs *regs);
+typedef asmlinkage long (*orig_unlinkat_t)(struct pt_regs *regs);
 unsigned long sys_call_table_addr = 0;
 orig_read_t old_read = NULL;
 orig_write_t old_write = NULL;
 orig_openat_t old_openat = NULL;
 orig_rename_t old_rename = NULL;
-
+orig_unlinkat_t old_unlinkat = NULL;
 unsigned int level;
 pte_t *pte;
 
@@ -164,15 +165,59 @@ asmlinkage long hooked_rename(struct pt_regs *regs) {
 	strncpy_from_user(dst,(char*)regs->si,MAX_LENGTH);
         strncpy_from_user(src,(char*)regs->di,MAX_LENGTH);
         if(strstr(dst,SAFENAME)||strstr(src,SAFENAME))
-              {
-				  kfree(dst);
-				  kfree(src);
-				  return -1;}	
+        {
+		    if (strncmp(current->comm,COMMANDNAME,strlen(COMMANDNAME)-1) != 0)
+			{
+		    kfree(dst);
+		    kfree(src);
+		    return -1;
+			}
+		}	
     kfree(dst);
 	kfree(src);
 	return old_rename(regs);
 }
+asmlinkage long hooked_unlinkat(struct pt_regs *regs) {
+	char *name = (char*)kmalloc(MAX_LENGTH,GFP_KERNEL);
+	char *path = (char*)kmalloc(MAX_LENGTH,GFP_KERNEL);
+	strncpy_from_user(name,(char*)regs->si,MAX_LENGTH);
 
+	task_lock(current);
+
+	//absolute path
+	if (strncmp(name,"/",1) == 0) {
+		strcpy(path,name);
+	}
+	//relative path
+	else if ((int)regs->di == AT_FDCWD) {
+		struct dentry *parent_dentry = current->fs->pwd.dentry;
+		get_path_from_dentry(path,parent_dentry);
+		//strcpy(path,parent_dentry->d_name.name);
+		if (strcmp(path,"/") != 0) {
+			strcat(path,"/");
+		}
+		strcat(path,name);
+	}
+	else {
+		goto end;
+	}
+	
+	if (strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,SAFENAME)) {
+		if (strncmp(current->comm,COMMANDNAME,strlen(COMMANDNAME)-1) != 0) {
+			printk("Find unlinkat operation to safeBox: %s The path is %s", SAFEPATH, path);
+			kfree(name);
+			kfree(path);
+			task_unlock(current);
+			return -1;
+		}
+	}
+
+end:
+	kfree(name);
+	kfree(path);
+	task_unlock(current);
+	return old_unlinkat(regs);
+}
 static int obtain_sys_call_table_addr(unsigned long * sys_call_table_addr) {
 	int ret = 1;
 	unsigned long temp_sys_call_table_addr;
@@ -206,6 +251,7 @@ static int hooked_init(void) {
     old_write = ((orig_write_t *)(sys_call_table_addr))[__NR_write]; 
     old_openat = ((orig_openat_t *)(sys_call_table_addr))[__NR_openat]; 
     old_rename = ((orig_rename_t *)(sys_call_table_addr))[__NR_rename]; 
+    old_unlinkat = ((orig_unlinkat_t *)(sys_call_table_addr))[__NR_unlinkat]; 
 	
     pte = lookup_address((unsigned long)sys_call_table_addr, &level);
  
@@ -217,10 +263,13 @@ static int hooked_init(void) {
     ((unsigned long * ) (sys_call_table_addr))[__NR_write]= (unsigned long) hooked_write;
     ((unsigned long * ) (sys_call_table_addr))[__NR_openat]= (unsigned long) hooked_openat;
     ((unsigned long * ) (sys_call_table_addr))[__NR_rename]= (unsigned long) hooked_rename;
+    ((unsigned long * ) (sys_call_table_addr))[__NR_unlinkat]= (unsigned long) hooked_unlinkat;
+	
     printk("+ sys_read hooked!\n");
     printk("+ sys_write hooked!\n");
     printk("+ sys_openat hooked!\n");
     printk("+ sys_rename hooked!\n");
+    printk("+ sys_unlinkat hooked!\n");
 	
     set_pte_atomic(pte, pte_clear_flags(*pte, _PAGE_RW));
  
@@ -238,6 +287,7 @@ static void hooked_exit(void) {
     ((unsigned long * ) (sys_call_table_addr))[__NR_write] = (unsigned long) old_write;
     ((unsigned long * ) (sys_call_table_addr))[__NR_openat] = (unsigned long) old_openat;
     ((unsigned long * ) (sys_call_table_addr))[__NR_rename] = (unsigned long) old_rename;
+	((unsigned long * ) (sys_call_table_addr))[__NR_unlinkat] = (unsigned long) old_unlinkat;
     set_pte_atomic(pte, pte_clear_flags(*pte, _PAGE_RW));
     
     printk("+ Unloading hook.ko\n");
