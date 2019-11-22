@@ -32,11 +32,12 @@ MODULE_DESCRIPTION("hook syscalls");
 typedef asmlinkage long (*orig_read_t)(struct pt_regs *regs);
 typedef asmlinkage long (*orig_write_t)(struct pt_regs *regs);
 typedef asmlinkage long (*orig_openat_t)(struct pt_regs *regs);
-
+typedef asmlinkage long (*orig_rename_t)(struct pt_regs *regs);
 unsigned long sys_call_table_addr = 0;
 orig_read_t old_read = NULL;
 orig_write_t old_write = NULL;
 orig_openat_t old_openat = NULL;
+orig_rename_t old_rename = NULL;
 
 unsigned int level;
 pte_t *pte;
@@ -75,7 +76,7 @@ asmlinkage long hooked_read(struct pt_regs *regs) {
 		//get_path_from_dentry(path,file->f_path.dentry);
 		path = dentry_path_raw(file->f_path.dentry,buff,PATH_MAX);
 		if(strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,SAFENAME)) {
-			if (strncmp(current->comm,COMMANDNAME,strlen(COMMANDNAME)) != 0) {
+			if (strncmp(current->comm,COMMANDNAME,strlen(COMMANDNAME)-1) != 0) {
 				printk("Find read operation to safeBox: %s The path is %s The command name is %s", SAFEPATH, path, current->comm);
 				kfree(buff);
 				task_unlock(current);
@@ -101,7 +102,7 @@ asmlinkage long hooked_write(struct pt_regs *regs) {
 		//get_path_from_dentry(path,file->f_path.dentry);
 		path = dentry_path_raw(file->f_path.dentry,buff,PATH_MAX);
 		if(strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,SAFENAME)) {
-			if (strncmp(current->comm,COMMANDNAME,strlen(COMMANDNAME)) != 0) {
+			if (strncmp(current->comm,COMMANDNAME,strlen(COMMANDNAME)-1) != 0) {
 				printk("Find write operation to safeBox: %s The path is %s The command name is %s", SAFEPATH, path, current->comm);
 				kfree(buff);
 				task_unlock(current);
@@ -141,7 +142,7 @@ asmlinkage long hooked_openat(struct pt_regs *regs) {
 	}
 	
 	if (strncmp(path,SAFEPATH,strlen(SAFEPATH)) == 0 || strstr(path,SAFENAME)) {
-		if (strncmp(current->comm,COMMANDNAME,strlen(COMMANDNAME)) != 0) {
+		if (strncmp(current->comm,COMMANDNAME,strlen(COMMANDNAME)-1) != 0) {
 			printk("Find openat operation to safeBox: %s The path is %s", SAFEPATH, path);
 			kfree(name);
 			kfree(path);
@@ -155,6 +156,16 @@ end:
 	kfree(path);
 	task_unlock(current);
 	return old_openat(regs);
+}
+
+asmlinkage long hooked_rename(struct pt_regs *regs) {
+	char *dst = (char*)kmalloc(MAX_LENGTH,GFP_KERNEL);
+	char *src = (char*)kmalloc(MAX_LENGTH,GFP_KERNEL);
+	strncpy_from_user(dst,(char*)regs->si,MAX_LENGTH);
+        strncpy_from_user(src,(char*)regs->di,MAX_LENGTH);
+        if(strstr(dst,SAFENAME)||strstr(src,SAFENAME))
+              {return -1;}	
+	return old_rename(regs);
 }
 
 static int obtain_sys_call_table_addr(unsigned long * sys_call_table_addr) {
@@ -189,6 +200,7 @@ static int hooked_init(void) {
     old_read = ((orig_read_t *)(sys_call_table_addr))[__NR_read];
     old_write = ((orig_write_t *)(sys_call_table_addr))[__NR_write]; 
     old_openat = ((orig_openat_t *)(sys_call_table_addr))[__NR_openat]; 
+    old_rename = ((orig_rename_t *)(sys_call_table_addr))[__NR_rename]; 
 	
     pte = lookup_address((unsigned long)sys_call_table_addr, &level);
  
@@ -199,11 +211,12 @@ static int hooked_init(void) {
     ((unsigned long * ) (sys_call_table_addr))[__NR_read]= (unsigned long) hooked_read;
     ((unsigned long * ) (sys_call_table_addr))[__NR_write]= (unsigned long) hooked_write;
     ((unsigned long * ) (sys_call_table_addr))[__NR_openat]= (unsigned long) hooked_openat;
-
+    ((unsigned long * ) (sys_call_table_addr))[__NR_rename]= (unsigned long) hooked_rename;
     printk("+ sys_read hooked!\n");
     printk("+ sys_write hooked!\n");
     printk("+ sys_openat hooked!\n");
-
+    printk("+ sys_rename hooked!\n");
+	
     set_pte_atomic(pte, pte_clear_flags(*pte, _PAGE_RW));
  
     return 0;
@@ -219,10 +232,10 @@ static void hooked_exit(void) {
     ((unsigned long * ) (sys_call_table_addr))[__NR_read] = (unsigned long) old_read;
     ((unsigned long * ) (sys_call_table_addr))[__NR_write] = (unsigned long) old_write;
     ((unsigned long * ) (sys_call_table_addr))[__NR_openat] = (unsigned long) old_openat;
-
+    ((unsigned long * ) (sys_call_table_addr))[__NR_rename] = (unsigned long) old_rename;
     set_pte_atomic(pte, pte_clear_flags(*pte, _PAGE_RW));
     
-    printk("+ Unloading hook_read module\n");
+    printk("+ Unloading hook.ko\n");
 }
 
 module_init(hooked_init);
