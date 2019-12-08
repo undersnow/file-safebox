@@ -24,6 +24,7 @@ gcc safe_manager.c  -o  safe_manager
 ```shell
 ./safe_manager in  filename     :cp file to /root/safeBox/
 ./safe_manager out filename     :cp file in /root/safeBox/ to current folder
+./safe_manager del filename     :delete file in /root/safeBox/ 
 ./safe_manager ls               :check the file list in /root/safeBox/
 ```
 

@@ -75,7 +75,7 @@ int main( int argc, char *argv[] )
 	else if (argc==3)
 	{
 
-		if(strncmp(argv[1],"in",2)!=0&&strncmp(argv[1],"out",3)!=0)
+		if(strncmp(argv[1],"in",2)!=0&&strncmp(argv[1],"out",3)!=0&&strncmp(argv[1],"del",3)!=0)
 		{
 			printf("wrong !  %s\n",argv[1]);
 			return 0;
@@ -100,7 +100,18 @@ int main( int argc, char *argv[] )
 		int out=-1;
 		int flag;
 		char buffer[1024];
-
+        if(strncmp(argv[1],"del",3) == 0)
+		{
+			out=remove(path2);
+printf("%s\n",path1);
+printf("%s\n",path2);
+			if(out==0)
+			{
+				printf("delete successfully!\n");
+				return 0;
+			}
+			return -1;
+		}
 		if(strncmp(argv[1],"out",3) == 0)
 		{
 			in = open(path2,S_IWUSR);
