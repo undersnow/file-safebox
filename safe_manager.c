@@ -8,7 +8,7 @@
 #include <string.h>
 #include <errno.h>
 
-#define SAFEPATH "/root/safeBox"
+#define SAFEPATH "/home/test/safeBox"
 #define PASSWORD "password"
 
 char password[80], cmd1[80], cmd2[80];
@@ -60,7 +60,7 @@ int copyFile(char *from, char *to) {
 		return -1;
 	} 
 
-	out = creat(to,S_IWUSR|S_IRUSR);
+	out = creat(to,S_IRWXU|S_IRWXG|S_IROTH|S_IXOTH);
 	if (out == -1)
 	{
 		printf("create file %s failed!\n", to);
@@ -79,16 +79,66 @@ int copyFile(char *from, char *to) {
 	return 0;
 }
 
+int is_dir_exist(const char*dir_path){
+    if(dir_path==NULL){
+        return -1;
+    }
+    if(opendir(dir_path)==NULL){
+        return -1;
+    }
+    return 0;
+}
+
+unsigned int APHash(char*str)
+{
+    unsigned int hash=0 ;
+    int i ;
+       
+    for(i=0;*str;i++)
+    {
+        if((i&1)==0)
+        {
+            hash^=((hash<<7)^(*str++)^(hash>>3));
+        }
+        else
+        {
+            hash^=(~((hash<<11)^(*str++)^(hash>>5)));
+        }
+    }
+       
+    return(hash % 249997);
+}
+
 int main( int argc, char *argv[] )
 {
 	
 	char *from, *to, *name;
-
+        int hashnum=0;
+       int judge=is_dir_exist(SAFEPATH);
+       if(judge==0){
+        printf("find safeBox at /home/test/safeBox\n");
+       }else if(judge==-1){
+        printf("creating safeBox at /home/test/safeBox\n");
+	    int result=mkdir(SAFEPATH,S_IRWXU|S_IRWXG|S_IROTH|S_IXOTH);
+            if(result==0)
+            {printf("successfully create safeBox\n");
+}
+            else
+            {
+      printf("create safeBox failure!!!\n");
+               return -1;
+             } 
+       }else
+	{
+		printf("wrong safeBox route!!!\n");
+	    return -1;	
+	}
 	getcwd(cwd, 1024);
 
 	printf("Please enter the password: ");
 	scanf("%s", password);
-	if (strcmp(password,PASSWORD) != 0) {
+        hashnum=APHash(password);
+	if (hashnum!= 60178) {
 		printf("Wrong password!\n");
 		return -1;
 	}
