@@ -9,7 +9,6 @@
 #include <errno.h>
 
 #define SAFEPATH "/home/test/safeBox"
-#define PASSWORD "password"
 
 char password[80], cmd1[80], cmd2[80];
 char cwd[1024];
